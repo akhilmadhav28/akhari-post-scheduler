@@ -1,0 +1,41 @@
+# Calls the Akhari social app's due-post check every 5 minutes: it publishes
+# approved posts that are due, sends approval requests 3 hours before each
+# slot, flags missed slots, and sends missed-slot reminders.
+#
+# Secrets (Settings > Secrets and variables > Actions):
+#   AKHARI_API_URL    e.g. https://akhari-social-automation.onrender.com
+#   INTERNAL_API_KEY  same value as INTERNAL_API_KEY in the app's .env
+#
+# This repo is public, so the step prints only the HTTP status, never the
+# response body (which lists post ids).
+name: Run due posts
+
+on:
+  schedule:
+    - cron: "*/5 * * * *" # GitHub's minimum; runs are often a few minutes late
+  workflow_dispatch:
+
+concurrency:
+  group: run-due-posts
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  call:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Call run-due-posts
+        env:
+          API_URL: ${{ secrets.AKHARI_API_URL }}
+          API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+        run: |
+          # Render's free plan sleeps the app when idle; waking takes up to a
+          # minute, hence the long timeout and one retry.
+          status=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 150 \
+            --retry 1 --retry-delay 20 --retry-all-errors \
+            -X POST -H "X-API-Key: ${API_KEY}" \
+            "${API_URL%/}/api/internal/run-due-posts")
+          echo "HTTP ${status}"
+          test "${status}" = "200"
